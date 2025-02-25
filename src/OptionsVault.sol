@@ -103,4 +103,58 @@ contract OptionsVault is IERC721Receiver {
                 uint160(uint256(keccak256(abi.encodePacked(token0, token1))))
             );
     }
+
+    function _withdrawAssets(
+        uint256 tokenId
+    ) internal returns (uint256, uint256, address) {
+        // Get position details including pool tokens
+        (
+            ,
+            ,
+            address token0,
+            address token1,
+            ,
+            ,
+            ,
+            uint128 liquidity,
+            ,
+            ,
+            ,
+
+        ) = uniswapNFTManager.positions(tokenId);
+
+        // Decrease all liquidity
+        INonfungiblePositionManager.DecreaseLiquidityParams
+            memory decreaseParams = INonfungiblePositionManager
+                .DecreaseLiquidityParams({
+                    tokenId: tokenId,
+                    liquidity: liquidity,
+                    amount0Min: 0,
+                    amount1Min: 0,
+                    deadline: block.timestamp
+                });
+
+        (uint256 amount0, uint256 amount1) = uniswapNFTManager
+            .decreaseLiquidity(decreaseParams);
+
+        // Collect fees
+        INonfungiblePositionManager.CollectParams
+            memory collectParams = INonfungiblePositionManager.CollectParams({
+                tokenId: tokenId,
+                recipient: address(this),
+                amount0Max: type(uint128).max,
+                amount1Max: type(uint128).max
+            });
+
+        (uint256 collected0, uint256 collected1) = uniswapNFTManager.collect(
+            collectParams
+        );
+
+        // Return amounts with token0 address as asset1
+        return (
+            amount0 + collected0,
+            amount1 + collected1,
+            token0
+        );
+    }
 }
