@@ -7,7 +7,18 @@ import "@uniswap-core/interfaces/IUniswapV3Pool.sol";
 
 contract OptionToken is ERC20, AccessControl {
     bytes32 public constant OPTION_ADMIN = keccak256("OPTION_ADMIN");
+        
+    struct OptionTerms {
+        uint256 strikePrice;
+        uint256 expiry;
+        bool isCall;
+        address poolAddress;
+        address creator;
+        uint256 asset1Reserve;
+        uint256 asset2Reserve;
+    }
 
+    OptionTerms public terms;
     IUniswapV3Pool public uniswapPool;
 
     // Private storage for the token name and symbol.
