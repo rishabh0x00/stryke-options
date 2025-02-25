@@ -39,6 +39,65 @@ contract OptionToken is ERC20, AccessControl {
         _initialized = true; // Setting initialized to true here so that Implementation contract cannot be initialized later
     }
 
+    function initialize(
+        string memory _name,
+        string memory _symbol,
+        uint256 _strikePrice,
+        uint256 _expiry,
+        bool _isCall,
+        address _creator,
+        address _poolAddress,
+        uint256 _asset1Amt,
+        uint256 _asset2Amt,
+        address _admin
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) notInitialized {
+        terms = OptionTerms(
+            _strikePrice,
+            _expiry,
+            _isCall,
+            _poolAddress,
+            _creator,
+            _asset1Amt,
+            _asset2Amt
+        );
+        uniswapPool = IUniswapV3Pool(_poolAddress);
+        _customName = _name;
+        _customSymbol = _symbol;
+
+        _grantRole(OPTION_ADMIN, _admin);
+        _grantRole(DEFAULT_ADMIN_ROLE, _admin);
+        _revokeRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _mint(_creator, _asset1Amt);
+    }
+
+    function calculateProfit(address user, uint256 amount) external view returns (bool, uint256) {
+        require(balanceOf(user) >= amount, "Insufficient options");
+        uint256 price = getAssetPrice();
+        
+        if (terms.isCall == true && price > terms.strikePrice) {
+            return (true, (price - terms.strikePrice) * amount / 1e18);
+        } 
+        if (terms.isCall == false && price < terms.strikePrice) {
+            return (true, (terms.strikePrice - price) * amount / 1e18);
+        }
+        return (false, 0);
+    }
+
+    function getAssetPrice() public view returns (uint256) {
+        (uint160 sqrtPriceX96,,,,,,) = uniswapPool.slot0();
+        uint256 priceX96 = uint256(sqrtPriceX96) * uint256(sqrtPriceX96);
+        return priceX96 * 1e18 / (2**192); // Normalized to 18 decimals
+    }
+
+    function adminTransfer(address from, address to, uint256 amount) external onlyRole(OPTION_ADMIN) {
+        _transfer(from, to, amount);
+    }
+
+    function burn(address account, uint256 amount) external onlyRole(OPTION_ADMIN) {
+        _burn(account, amount);
+    }
+
+
     /// @notice Override ERC20 name() to return our updated token name.
     function name() public view override returns (string memory) {
         return _customName;
