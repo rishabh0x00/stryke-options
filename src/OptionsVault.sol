@@ -32,7 +32,7 @@ contract OptionsVault is IERC721Receiver, ReentrancyGuard {
         uint256 asset1Amount,
         uint256 asset2Amount
     );
-    
+
     /// @notice Emitted when an option is bought.
     event OptionBought(
         address indexed buyer,
@@ -40,7 +40,7 @@ contract OptionsVault is IERC721Receiver, ReentrancyGuard {
         uint256 amount,
         uint256 premium
     );
-    
+
     /// @notice Emitted when an option is exercised.
     event OptionExercised(
         address indexed exerciser,
@@ -48,12 +48,9 @@ contract OptionsVault is IERC721Receiver, ReentrancyGuard {
         uint256 amount,
         uint256 profit
     );
-    
+
     /// @notice Emitted when the option creator claims remaining tokens.
-    event OptionClaimed(
-        address indexed creator,
-        address indexed optionAddress
-    );
+    event OptionClaimed(address indexed creator, address indexed optionAddress);
 
     /**
      * @notice OptionData holds details about an option created from an LP token.
@@ -85,7 +82,10 @@ contract OptionsVault is IERC721Receiver, ReentrancyGuard {
     ) {
         require(_uniswapNFTManager != address(0), "Zero NFT Manager address");
         require(_uniswapV3Factory != address(0), "Zero V3 Factory address");
-        require(_optionImplementation != address(0), "Zero Option implementation address");
+        require(
+            _optionImplementation != address(0),
+            "Zero Option implementation address"
+        );
 
         uniswapNFTManager = INonfungiblePositionManager(_uniswapNFTManager);
         uniswapV3Factory = IUniswapV3Factory(_uniswapV3Factory);
@@ -97,25 +97,17 @@ contract OptionsVault is IERC721Receiver, ReentrancyGuard {
      *         and creates an option.
      * @param from The address which previously owned the token.
      * @param tokenId The NFT token ID being transferred.
-     * @param data Encoded option parameters (strikePrice, premium, expiry, isCall).
      * @return The selector to confirm token receipt.
      */
     function onERC721Received(
         address,
         address from,
         uint256 tokenId,
-        bytes calldata data
-    ) external override nonReentrant returns (bytes4) {
+        bytes calldata
+    ) external override returns (bytes4) {
         require(from != address(0), "Invalid sender address");
         require(tokenId != 0, "Invalid token ID");
 
-        (uint256 strikePrice, uint256 premium, uint256 expiry, bool isCall) = abi.decode(
-            data,
-            (uint256, uint256, uint256, bool)
-        );
-        // Encode additional option data including creator and tokenId.
-        bytes memory optionData = abi.encode(strikePrice, premium, expiry, isCall, from, tokenId);
-        _createOption(optionData);
         return this.onERC721Received.selector;
     }
 
@@ -144,7 +136,14 @@ contract OptionsVault is IERC721Receiver, ReentrancyGuard {
             tokenId,
             ""
         );
-        bytes memory optionData = abi.encode(strikePrice, premium, expiry, isCall, msg.sender, tokenId);
+        bytes memory optionData = abi.encode(
+            strikePrice,
+            premium,
+            expiry,
+            isCall,
+            msg.sender,
+            tokenId
+        );
         _createOption(optionData);
     }
 
@@ -166,11 +165,21 @@ contract OptionsVault is IERC721Receiver, ReentrancyGuard {
         OptionToken option = OptionToken(optionAddress);
         (, , uint256 expiry, , , , , ) = option.terms();
         // Ensure that the option is not already in the exercise window or expired.
-        require(block.timestamp < expiry - 1 hours, "Option in exercise window or expired");
-        require(option.balanceOf(data.creator) >= amount, "Insufficient creator balance");
+        require(
+            block.timestamp < expiry - 1 hours,
+            "Option in exercise window or expired"
+        );
+        require(
+            option.balanceOf(data.creator) >= amount,
+            "Insufficient creator balance"
+        );
 
         uint256 premium = calculatePremium(optionAddress, amount);
-        IERC20(option.getAsset2Address()).safeTransferFrom(msg.sender, data.creator, premium);
+        IERC20(option.getAsset2Address()).safeTransferFrom(
+            msg.sender,
+            data.creator,
+            premium
+        );
         option.adminTransfer(data.creator, msg.sender, amount);
 
         emit OptionBought(msg.sender, optionAddress, amount, premium);
@@ -196,9 +205,12 @@ contract OptionsVault is IERC721Receiver, ReentrancyGuard {
             "Exercise window closed"
         );
 
-        (bool profitable, uint256 profit) = option.calculateProfit(msg.sender, amount);
+        (bool profitable, uint256 profit) = option.calculateProfit(
+            msg.sender,
+            amount
+        );
         require(profitable, "Option not profitable");
-        
+
         _transferAssets(optionAddress, profit, isCall);
         option.burn(msg.sender, amount);
 
@@ -219,8 +231,14 @@ contract OptionsVault is IERC721Receiver, ReentrancyGuard {
         (, , uint256 expiry, , , , , ) = option.terms();
         require(block.timestamp > expiry, "Option has not expired");
 
-        IERC20(option.getAsset1Address()).safeTransfer(data.creator, data.asset1Amount);
-        IERC20(option.getAsset2Address()).safeTransfer(data.creator, data.asset2Amount);
+        IERC20(option.getAsset1Address()).safeTransfer(
+            data.creator,
+            data.asset1Amount
+        );
+        IERC20(option.getAsset2Address()).safeTransfer(
+            data.creator,
+            data.asset2Amount
+        );
 
         emit OptionClaimed(data.creator, optionAddress);
     }
@@ -256,17 +274,27 @@ contract OptionsVault is IERC721Receiver, ReentrancyGuard {
             bool isCall,
             address creator,
             uint256 tokenId
-        ) = abi.decode(optionData, (uint256, uint256, uint256, bool, address, uint256));
+        ) = abi.decode(
+                optionData,
+                (uint256, uint256, uint256, bool, address, uint256)
+            );
         require(creator != address(0), "Zero creator address");
         require(strikePrice > 0, "Zero strike price");
         require(expiry > block.timestamp + 1 hours, "Invalid expiry");
 
         // Withdraw assets from the LP position.
-        (uint256 asset1Amt, uint256 asset2Amt, address asset1) = _withdrawAssets(tokenId);
+        (
+            uint256 asset1Amt,
+            uint256 asset2Amt,
+            address asset1
+        ) = _withdrawAssets(tokenId);
         require(asset1Amt > 0 && asset2Amt > 0, "Zero asset amounts");
 
         // Generate option metadata (name & symbol)
-        (string memory optionName, string memory optionSymbol) = _generateOptionMetadata(asset1, strikePrice, isCall);
+        (
+            string memory optionName,
+            string memory optionSymbol
+        ) = _generateOptionMetadata(asset1, strikePrice, isCall);
         // Create clone of OptionToken implementation.
         address option = Clones.clone(optionImplementation);
         // Here we assume initialize signature for OptionToken clone accepts:
@@ -308,7 +336,10 @@ contract OptionsVault is IERC721Receiver, ReentrancyGuard {
         OptionToken option = OptionToken(optionAddress);
         if (isCall) {
             uint256 profitInAsset1 = option.convertAsset2ToAsset1(profit);
-            IERC20(option.getAsset1Address()).safeTransfer(msg.sender, profitInAsset1);
+            IERC20(option.getAsset1Address()).safeTransfer(
+                msg.sender,
+                profitInAsset1
+            );
             data.asset1Amount -= profitInAsset1;
         } else {
             IERC20(option.getAsset2Address()).safeTransfer(msg.sender, profit);
@@ -367,25 +398,31 @@ contract OptionsVault is IERC721Receiver, ReentrancyGuard {
         ) = uniswapNFTManager.positions(tokenId);
 
         // Decrease all liquidity
-        INonfungiblePositionManager.DecreaseLiquidityParams memory decreaseParams = INonfungiblePositionManager.DecreaseLiquidityParams({
-            tokenId: tokenId,
-            liquidity: liquidity,
-            amount0Min: 0,
-            amount1Min: 0,
-            deadline: block.timestamp
-        });
+        INonfungiblePositionManager.DecreaseLiquidityParams
+            memory decreaseParams = INonfungiblePositionManager
+                .DecreaseLiquidityParams({
+                    tokenId: tokenId,
+                    liquidity: liquidity,
+                    amount0Min: 0,
+                    amount1Min: 0,
+                    deadline: block.timestamp
+                });
 
-        (uint256 amount0, uint256 amount1) = uniswapNFTManager.decreaseLiquidity(decreaseParams);
+        (uint256 amount0, uint256 amount1) = uniswapNFTManager
+            .decreaseLiquidity(decreaseParams);
 
         // Collect fees
-        INonfungiblePositionManager.CollectParams memory collectParams = INonfungiblePositionManager.CollectParams({
-            tokenId: tokenId,
-            recipient: address(this),
-            amount0Max: type(uint128).max,
-            amount1Max: type(uint128).max
-        });
+        INonfungiblePositionManager.CollectParams
+            memory collectParams = INonfungiblePositionManager.CollectParams({
+                tokenId: tokenId,
+                recipient: address(this),
+                amount0Max: type(uint128).max,
+                amount1Max: type(uint128).max
+            });
 
-        (uint256 collected0, uint256 collected1) = uniswapNFTManager.collect(collectParams);
+        (uint256 collected0, uint256 collected1) = uniswapNFTManager.collect(
+            collectParams
+        );
 
         asset1Amt = amount0 + collected0;
         asset2Amt = amount1 + collected1;
@@ -450,13 +487,20 @@ contract OptionsVault is IERC721Receiver, ReentrancyGuard {
         require(asset1 != address(0), "Invalid asset address");
         string memory assetSymbol = ERC20(asset1).symbol();
         uint8 decimals = ERC20(asset1).decimals();
-        string memory strikePriceStr = _formatStrikePrice(strikePrice, decimals);
+        string memory strikePriceStr = _formatStrikePrice(
+            strikePrice,
+            decimals
+        );
 
         // Generate name and symbol based on option type.
         string memory typeStr = isCall ? "Call" : "Put";
         string memory typeSymbol = isCall ? "C" : "P";
 
-        optionName = string(abi.encodePacked(assetSymbol, " ", typeStr, " ", strikePriceStr));
-        optionSymbol = string(abi.encodePacked(assetSymbol, "-", typeSymbol, "-", strikePriceStr));
+        optionName = string(
+            abi.encodePacked(assetSymbol, " ", typeStr, " ", strikePriceStr)
+        );
+        optionSymbol = string(
+            abi.encodePacked(assetSymbol, "-", typeSymbol, "-", strikePriceStr)
+        );
     }
 }

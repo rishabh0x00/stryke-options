@@ -60,7 +60,11 @@ contract OptionToken is ERC20, AccessControl, ReentrancyGuard {
     );
 
     /// @notice Emitted when an admin transfer occurs.
-    event AdminTransfer(address indexed from, address indexed to, uint256 amount);
+    event AdminTransfer(
+        address indexed from,
+        address indexed to,
+        uint256 amount
+    );
 
     /// @notice Emitted when tokens are burned.
     event TokensBurned(address indexed account, uint256 amount);
@@ -79,7 +83,6 @@ contract OptionToken is ERC20, AccessControl, ReentrancyGuard {
      * @dev The constructor disables initialization on the implementation so that clones must be initialized.
      */
     constructor() ERC20("", "") {
-        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _initialized = true; // Prevent implementation contract from being initialized later.
     }
 
@@ -88,15 +91,26 @@ contract OptionToken is ERC20, AccessControl, ReentrancyGuard {
      * @dev Can only be called once. The caller must have DEFAULT_ADMIN_ROLE.
      * @param optionData The abi encoded data containing initialization values for Option.
      */
-    function initialize(bytes calldata optionData, string memory _name, string memory _symbol, address _poolAddress,uint256 _asset1Amt,uint256 _asset2Amt,address _admin) external onlyRole(DEFAULT_ADMIN_ROLE) notInitialized nonReentrant {
+    function initialize(
+        bytes calldata optionData,
+        string memory _name,
+        string memory _symbol,
+        address _poolAddress,
+        uint256 _asset1Amt,
+        uint256 _asset2Amt,
+        address _admin
+    ) external notInitialized nonReentrant {
         (
-        uint256 _strikePrice,
-        uint256 _premium,
-        uint256 _expiry,
-        bool _isCall,
-        address _creator,
-        
-    ) = abi.decode(optionData, (uint256, uint256, uint256, bool, address, uint256));
+            uint256 _strikePrice,
+            uint256 _premium,
+            uint256 _expiry,
+            bool _isCall,
+            address _creator,
+
+        ) = abi.decode(
+                optionData,
+                (uint256, uint256, uint256, bool, address, uint256)
+            );
         require(bytes(_name).length > 0, "Name cannot be empty");
         require(bytes(_symbol).length > 0, "Symbol cannot be empty");
         require(_poolAddress != address(0), "Pool address is zero");
@@ -120,7 +134,6 @@ contract OptionToken is ERC20, AccessControl, ReentrancyGuard {
         // Grant roles.
         _grantRole(OPTION_ADMIN, _admin);
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
-        _revokeRole(DEFAULT_ADMIN_ROLE, msg.sender);
 
         uint256 asset1Decimals = ERC20(getAsset1Address()).decimals();
         uint256 optionAmount = _asset1Amt * (10 ** (18 - asset1Decimals));
@@ -234,7 +247,7 @@ contract OptionToken is ERC20, AccessControl, ReentrancyGuard {
      * @return The asset2 token address.
      */
     function getAsset2Address() public view returns (address) {
-        return terms.uniswapPool.token0();
+        return terms.uniswapPool.token1();
     }
 
     /**
