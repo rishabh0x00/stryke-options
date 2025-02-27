@@ -1,5 +1,5 @@
 import "./globals.css";
-import { WalletProvider } from "@/context/WalletContext";
+import { WalletProvider } from "../context/WalletContext";
 
 export default function RootLayout({
   children,
