@@ -13,7 +13,7 @@ import "./OptionToken.sol";
 
 /**
  * @title OptionsVault
- * @notice This contract manages the creation, purchase, exercise, and token claims of option tokens
+ * @notice This contract manages the minting, purchase, exercise, and token claims of option tokens
  *         derived from Uniswap V3 LP positions.
  */
 contract OptionsVault is IERC721Receiver, ReentrancyGuard {
@@ -24,11 +24,11 @@ contract OptionsVault is IERC721Receiver, ReentrancyGuard {
     IUniswapV3Factory public uniswapV3Factory;
     address public optionImplementation;
 
-    /// @notice Emitted when an option is created.
-    event OptionCreated(
+    /// @notice Emitted when an option is minted.
+    event OptionMinted(
         address indexed optionAddress,
         uint256 indexed tokenId,
-        address indexed creator,
+        address indexed minter,
         uint256 asset1Amount,
         uint256 asset2Amount
     );
@@ -49,18 +49,18 @@ contract OptionsVault is IERC721Receiver, ReentrancyGuard {
         uint256 profit
     );
 
-    /// @notice Emitted when the option creator claims remaining tokens.
-    event OptionClaimed(address indexed creator, address indexed optionAddress);
+    /// @notice Emitted when the option minter claims remaining tokens.
+    event OptionClaimed(address indexed minter, address indexed optionAddress);
 
     /**
-     * @notice OptionData holds details about an option created from an LP token.
-     * @param creator The address that created the option.
-     * @param tokenId The NFT token ID that was used to create the option.
+     * @notice OptionData holds details about an option minted from an LP token.
+     * @param minter The address that minted the option.
+     * @param tokenId The NFT token ID that was used to mint the option.
      * @param asset1Amount The amount of asset1 withdrawn from the LP.
      * @param asset2Amount The amount of asset2 withdrawn from the LP.
      */
     struct OptionData {
-        address creator;
+        address minter;
         uint256 tokenId;
         uint256 asset1Amount;
         uint256 asset2Amount;
@@ -94,7 +94,7 @@ contract OptionsVault is IERC721Receiver, ReentrancyGuard {
 
     /**
      * @notice Called upon receipt of an ERC721 token. Decodes option parameters from `data`
-     *         and creates an option.
+     *         and mints an option.
      * @param from The address which previously owned the token.
      * @param tokenId The NFT token ID being transferred.
      * @return The selector to confirm token receipt.
@@ -112,14 +112,14 @@ contract OptionsVault is IERC721Receiver, ReentrancyGuard {
     }
 
     /**
-     * @notice Allows manual creation of an option by transferring the NFT to the vault.
+     * @notice Allows manual minting of an option by transferring the NFT to the vault.
      * @param tokenId The NFT token ID.
      * @param strikePrice Strike price for the option.
      * @param premium Premium for the option.
      * @param expiry Expiry timestamp for the option.
      * @param isCall True if Call option, false if Put.
      */
-    function createOption(
+    function mintOption(
         uint256 tokenId,
         uint256 strikePrice,
         uint256 premium,
@@ -144,11 +144,11 @@ contract OptionsVault is IERC721Receiver, ReentrancyGuard {
             msg.sender,
             tokenId
         );
-        _createOption(optionData);
+        _mintOption(optionData);
     }
 
     /**
-     * @notice Allows a user to buy options from the option creator.
+     * @notice Allows a user to buy options from the option minter.
      * @param optionAddress Address of the option contract.
      * @param amount Amount of options to buy.
      */
@@ -160,7 +160,7 @@ contract OptionsVault is IERC721Receiver, ReentrancyGuard {
         require(amount > 0, "Zero option amount");
 
         OptionData memory data = optionByAddress[optionAddress];
-        require(data.creator != address(0), "Invalid option");
+        require(data.minter != address(0), "Invalid option");
 
         OptionToken option = OptionToken(optionAddress);
         (, , uint256 expiry, , , , , ) = option.terms();
@@ -170,17 +170,17 @@ contract OptionsVault is IERC721Receiver, ReentrancyGuard {
             "Option in exercise window or expired"
         );
         require(
-            option.balanceOf(data.creator) >= amount,
-            "Insufficient creator balance"
+            option.balanceOf(data.minter) >= amount,
+            "Insufficient minter balance"
         );
 
         uint256 premium = calculatePremium(optionAddress, amount);
         IERC20(option.getAsset2Address()).safeTransferFrom(
             msg.sender,
-            data.creator,
+            data.minter,
             premium
         );
-        option.adminTransfer(data.creator, msg.sender, amount);
+        option.adminTransfer(data.minter, msg.sender, amount);
 
         emit OptionBought(msg.sender, optionAddress, amount, premium);
     }
@@ -218,29 +218,29 @@ contract OptionsVault is IERC721Receiver, ReentrancyGuard {
     }
 
     /**
-     * @notice Allows the option creator to claim remaining tokens after option expiry.
+     * @notice Allows the option minter to claim remaining tokens after option expiry.
      * @param optionAddress Address of the option contract.
      */
     function claimTokens(address optionAddress) external nonReentrant {
         require(optionAddress != address(0), "Invalid option address");
 
         OptionData storage data = optionByAddress[optionAddress];
-        require(data.creator == msg.sender, "Caller is not option creator");
+        require(data.minter == msg.sender, "Caller is not option minter");
 
         OptionToken option = OptionToken(optionAddress);
         (, , uint256 expiry, , , , , ) = option.terms();
         require(block.timestamp > expiry, "Option has not expired");
 
         IERC20(option.getAsset1Address()).safeTransfer(
-            data.creator,
+            data.minter,
             data.asset1Amount
         );
         IERC20(option.getAsset2Address()).safeTransfer(
-            data.creator,
+            data.minter,
             data.asset2Amount
         );
 
-        emit OptionClaimed(data.creator, optionAddress);
+        emit OptionClaimed(data.minter, optionAddress);
     }
 
     /**
@@ -260,25 +260,24 @@ contract OptionsVault is IERC721Receiver, ReentrancyGuard {
     }
 
     /**
-     * @notice Internal function that contains the core logic for creating an option.
+     * @notice Internal function that contains the core logic for minting an option.
      * @dev Decodes the abi-encoded option data, withdraws assets from the LP, generates option metadata,
      *      and deploys a clone of the OptionToken contract.
      * @param optionData The ABI-encoded data containing values for the Option contract.
      */
-    function _createOption(bytes memory optionData) internal {
+    function _mintOption(bytes memory optionData) internal {
         // Decode required values and check validity.
         (
             uint256 strikePrice,
             ,
             uint256 expiry,
             bool isCall,
-            address creator,
+            address minter,
             uint256 tokenId
         ) = abi.decode(
                 optionData,
                 (uint256, uint256, uint256, bool, address, uint256)
             );
-        require(creator != address(0), "Zero creator address");
         require(strikePrice > 0, "Zero strike price");
         require(expiry > block.timestamp + 1 hours, "Invalid expiry");
 
@@ -310,14 +309,14 @@ contract OptionsVault is IERC721Receiver, ReentrancyGuard {
         );
 
         OptionData memory newData = OptionData(
-            creator,
+            minter,
             tokenId,
             asset1Amt,
             asset2Amt
         );
         optionByAddress[option] = newData;
 
-        emit OptionCreated(option, tokenId, creator, asset1Amt, asset2Amt);
+        emit OptionMinted(option, tokenId, minter, asset1Amt, asset2Amt);
     }
 
     /**
