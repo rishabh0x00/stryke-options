@@ -23,7 +23,7 @@ contract OptionToken is ERC20, AccessControl, ReentrancyGuard {
      * @param expiry The expiry timestamp for the option.
      * @param isCall True if the option is a call, false if a put.
      * @param uniswapPool The Uniswap V3 pool used for the price feed.
-     * @param creator The address that created the option.
+     * @param minter The address that minted the option.
      * @param asset1Reserve The reserve amount for asset1.
      * @param asset2Reserve The reserve amount for asset2.
      */
@@ -33,7 +33,7 @@ contract OptionToken is ERC20, AccessControl, ReentrancyGuard {
         uint256 expiry;
         bool isCall;
         IUniswapV3Pool uniswapPool;
-        address creator;
+        address minter;
         uint256 asset1Reserve;
         uint256 asset2Reserve;
     }
@@ -56,7 +56,7 @@ contract OptionToken is ERC20, AccessControl, ReentrancyGuard {
         uint256 premium,
         uint256 expiry,
         bool isCall,
-        address creator
+        address minter
     );
 
     /// @notice Emitted when an admin transfer occurs.
@@ -105,7 +105,7 @@ contract OptionToken is ERC20, AccessControl, ReentrancyGuard {
             uint256 _premium,
             uint256 _expiry,
             bool _isCall,
-            address _creator,
+            address _minter,
 
         ) = abi.decode(
                 optionData,
@@ -121,7 +121,7 @@ contract OptionToken is ERC20, AccessControl, ReentrancyGuard {
             expiry: _expiry,
             isCall: _isCall,
             uniswapPool: IUniswapV3Pool(_poolAddress),
-            creator: _creator,
+            minter: _minter,
             asset1Reserve: _asset1Amt,
             asset2Reserve: _asset2Amt
         });
@@ -137,9 +137,9 @@ contract OptionToken is ERC20, AccessControl, ReentrancyGuard {
 
         uint256 asset1Decimals = ERC20(getAsset1Address()).decimals();
         uint256 optionAmount = _asset1Amt * (10 ** (18 - asset1Decimals));
-        _mint(_creator, optionAmount);
+        _mint(_minter, optionAmount);
 
-        emit Initialized(_strikePrice, _premium, _expiry, _isCall, _creator);
+        emit Initialized(_strikePrice, _premium, _expiry, _isCall, _minter);
     }
 
     /**
